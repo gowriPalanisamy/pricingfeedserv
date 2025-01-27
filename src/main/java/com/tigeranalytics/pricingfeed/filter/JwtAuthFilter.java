@@ -108,9 +108,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
                 if (handler instanceof HandlerMethod) {
                     HandlerMethod handlerMethod = (HandlerMethod) handler;
-                    System.out.println("Handler Method: " + handlerMethod);
-                    System.out.println("Controller: " + handlerMethod.getBeanType().getName());
-                    System.out.println("Method Name: " + handlerMethod.getMethod().getName());
+                    logger.info("Handler Method:{} Controller: {} MethodName: {} ",handlerMethod,handlerMethod.
+                            getBeanType().getName(),handlerMethod.getMethod().getName());
                     PFAuthPolicy pfAuthPolicy = (PFAuthPolicy) handlerMethod.getMethodAnnotation(PFAuthPolicy.class);
                     String[] roles = pfAuthPolicy.roles();
                     boolean isUserAuthorized = false;
@@ -125,11 +124,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                         throw new PricingFeedError(PricingFeedErrorType.ACCESS_FORBIDDEN, "User Access Denied " +
                                 "User do not have permission to access the resource");
                     }
-                } else {
-                    System.out.println("Handler: " + handler);
                 }
             } else {
-                System.out.println("No handler found for the request.");
+                logger.error("No handler found for the request.");
             }
     }
 
@@ -193,4 +190,3 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         return orderJson;
     }
 }
-
