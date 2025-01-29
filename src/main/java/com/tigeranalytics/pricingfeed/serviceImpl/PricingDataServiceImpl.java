@@ -14,11 +14,12 @@ import com.tigeranalytics.pricingfeed.service.PricingDataService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.cloud.sleuth.Tracer;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 public class PricingDataServiceImpl implements PricingDataService {
@@ -34,18 +35,12 @@ public class PricingDataServiceImpl implements PricingDataService {
     @Autowired
     private FileValidationUtility fileValidationUtility;
 
-    /*@Autowired
-    private final Tracer tracer;
-
-    public PricingDataServiceImpl(Tracer tracer) {
-        this.tracer = tracer;
-    }*/
-
     @Override
-    public Response validateAndSaveFile(MultipartFile pricingFeedCSVFile, String extension) {
+    public CompletableFuture<Response> validateAndSaveFile(MultipartFile pricingFeedCSVFile, String extension) {
         logger.info("Validate and process the file.");
         fileValidationUtility.validateFile(pricingFeedCSVFile, AppConstant.EXTENSION);
-        return processAndSave(pricingFeedCSVFile);
+        CompletableFuture<Response> response=processAndSave(pricingFeedCSVFile);
+        return response;
     }
 
     @Override
@@ -86,28 +81,38 @@ public class PricingDataServiceImpl implements PricingDataService {
                 pricingDataDO.getPrice(),pricingDataDO.getDate(),null);
     }
 
-    public Response processAndSave(MultipartFile file) {
+    @Async
+    public CompletableFuture<Response> processAndSave(MultipartFile file) {
+        Response response=new Response();
         try {
             Map<String, List<PricingData>> finalPricingDataList=fileValidationUtility.validateRecords(file);
             logger.info("Completed the Validation for the Pricing Data records..");
             List<PricingData> pricingDataList = finalPricingDataList.get("validData");
             List<PricingDataDO> finalPricingDataDOList = pricingDataMapper.populatePricingDataDOList(pricingDataList);
+            List<PricingData> InvalidDataList = prepareInValidDataToWriteInCsv(finalPricingDataList);
             pricingDataRepository.saveAll(finalPricingDataDOList);
             logger.info("Successfully persisted {} records.", finalPricingDataDOList.size());
             CSVHelper.writeSuccessDataToCsv(pricingDataMapper.populatepricingDataList(finalPricingDataDOList), successFilepath);
-            List<PricingData> dataToWriteInCsvList = prepareDataToWriteInCsv(finalPricingDataList);
-            CSVHelper.writeInvalidDataToCsv(dataToWriteInCsvList,failureFilepath);
+            CSVHelper.writeInvalidDataToCsv(InvalidDataList,failureFilepath);
             logger.info("CSV files generated for success and failure data.");
-            return new Response(finalPricingDataList.get("TotalRecordCount").size(),pricingDataList.size(),
-                    dataToWriteInCsvList.size(),successFilepath,failureFilepath );
-           // saveActivityLog(fileName, uploadedBy, pricingDataList.size(), successfulData.size(), invalidData.size());
-        } catch (Exception e) {
-            logger.error("Unable to process the pricingData records: {} ",e.getMessage(),e);
-            throw new RuntimeException("Data is not stored successfully "+e.getMessage());
+            response.setTotalNumberOfRecords(finalPricingDataList.get("TotalRecordCount").size());
+            response.setSuccessRecordCount(pricingDataList.size());
+            response.setFailureRecordCount(InvalidDataList.size());
+            response.setSuccessFilePath(successFilepath);
+            response.setFailureFilePath(failureFilepath);
+            return CompletableFuture.completedFuture(response);
+        }catch (Exception e) {
+            logger.error("Error occurred while saving pricing data: {}", e.getMessage());
+            response.setTotalNumberOfRecords(0);
+            response.setSuccessRecordCount(0);
+            response.setFailureRecordCount(0);
+            response.setSuccessFilePath("");
+            response.setFailureFilePath("");
+            return CompletableFuture.completedFuture(response);
         }
     }
 
-    private static List<PricingData>  prepareDataToWriteInCsv(Map<String, List<PricingData>> finalPricingDataList) {
+    private List<PricingData> prepareInValidDataToWriteInCsv(Map<String, List<PricingData>> finalPricingDataList) {
         List<PricingData> invalidDatas = finalPricingDataList.get("invalidData");
         List<PricingData> storeSKUNotFoundList = finalPricingDataList.get("storeSKUNotFound");
         List<PricingData> pricingDatas=new ArrayList<>();
