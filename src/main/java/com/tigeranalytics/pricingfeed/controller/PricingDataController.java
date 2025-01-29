@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 
 @RestController
@@ -23,20 +24,23 @@ public class PricingDataController {
 
     @PostMapping("/upload")
     @PFAuthPolicy(roles={"ROLE_ADMIN"})
-    public ResponseEntity<?> uploadCSVFile(@RequestParam("file") MultipartFile pricingFeedCSVFile){
-        Response response = pricingDataService.validateAndSaveFile(pricingFeedCSVFile, AppConstant.EXTENSION);
-        return ResponseEntity.status(HttpStatus.OK).body("File uploaded and processed successfully.\n"+
-                "Total records: " + response.getTotalNumberOfRecords()+"\n"+
-                "Success Count: "+response.getSuccessRecordCount()+"\n"+
-                "Failure Count: "+response.getFailureRecordCount()+"\n"+
-                "successFilePath: "+response.getSuccessFilePath()+"\n"+
-                "FailureFilePath: "+response.getFailureFilePath());
+    public CompletableFuture<ResponseEntity<?>> uploadCSVFile(@RequestParam("file") MultipartFile pricingFeedCSVFile){
+        CompletableFuture<Response> responseFuture = pricingDataService.validateAndSaveFile(pricingFeedCSVFile,
+                AppConstant.EXTENSION);
+        return responseFuture.thenApply(response->ResponseEntity.status(HttpStatus.OK)
+                    .body("File uploaded and processed successfully.\n"+
+                            "Total records: " + response.getTotalNumberOfRecords()+"\n"+
+                            "Success Count: "+response.getSuccessRecordCount()+"\n"+
+                            "Failure Count: "+response.getFailureRecordCount()+"\n"+
+                            "successFilePath: "+response.getSuccessFilePath()+"\n"+
+                            "FailureFilePath: "+response.getFailureFilePath()));
+
     }
 
     @GetMapping("/search")
     @PFAuthPolicy(roles={"ROLE_ADMIN","ROLE_USER"})
     public ResponseEntity<List<PricingData>> searchPricingData(
-            @RequestParam @NotNull  Long storeId,
+            @RequestParam @NotNull Long storeId,
             @RequestParam @NotNull String sku) {
         List<PricingData> result = pricingDataService.findByStoreIdAndSku(storeId, sku);
         return ResponseEntity.status(HttpStatus.OK).body(result);
